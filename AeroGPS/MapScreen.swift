@@ -27,7 +27,7 @@ struct MapScreen: View {
         GeometryReader { geo in
             ZStack {
                 Canvas { ctx, size in
-                    let r = Renderer(ctx: ctx, size: size, center: cam, zoom: zoom)
+                    let r = MapRenderer(ctx: ctx, size: size, center: cam, zoom: zoom)
                     r.drawBase(world, showCities: showCities)
                     r.drawTrack(track)
                     if let loc { r.drawPosition(loc, heading: heading) }
@@ -40,7 +40,7 @@ struct MapScreen: View {
                 controls(loc)
             }
         }
-        .background(Renderer.ocean)
+        .background(MapRenderer.ocean)
     }
 
     private func cameraCenter(_ loc: CLLocation?) -> SIMD2<Double> {
@@ -57,7 +57,7 @@ struct MapScreen: View {
                     dragStart = cam
                     follow = false
                 }
-                let scale = Renderer.pixelsPerUnit(zoom)
+                let scale = MapRenderer.pixelsPerUnit(zoom)
                 var c = dragStart! - SIMD2(Double(g.translation.width), Double(g.translation.height)) / scale
                 c.x = c.x - floor(c.x)                    // wrap around the dateline
                 c.y = min(max(c.y, 0), 1)
@@ -156,7 +156,8 @@ struct MapScreen: View {
 
 // MARK: - Renderer
 
-private struct Renderer {
+/// Draws the offline map into a SwiftUI Canvas. Shared by the Map tab and trip maps.
+struct MapRenderer {
     static let ocean = Color(red: 0.09, green: 0.20, blue: 0.36)
     static let land = Color(red: 0.20, green: 0.31, blue: 0.24)
     static let lake = Color(red: 0.11, green: 0.24, blue: 0.42)
@@ -318,7 +319,7 @@ private struct Renderer {
 
     // MARK: Track and position
 
-    func drawTrack(_ track: [SIMD2<Double>]) {
+    func drawTrack(_ track: [SIMD2<Double>], color: Color = MapRenderer.trackColor, width: CGFloat = 2.5) {
         guard track.count > 1 else { return }
         var path = Path()
         var last = screenNearest(track[0])
@@ -334,8 +335,33 @@ private struct Renderer {
             }
             last = p
         }
-        ctx.stroke(path, with: .color(Self.trackColor),
-                   style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
+        ctx.stroke(path, with: .color(color),
+                   style: StrokeStyle(lineWidth: width, lineCap: .round, lineJoin: .round))
+    }
+
+    /// Dashed great-circle line between two airports (the planned route).
+    func drawGreatCircle(_ a: Airport, _ b: Airport) {
+        let pts = Geo.greatCircle(a.lat, a.lon, b.lat, b.lon, steps: 96)
+        var path = Path()
+        var last: CGPoint?
+        for (lat, lon) in pts {
+            let p = screenNearest(Mercator.project(lat: lat, lon: lon))
+            if let l = last, abs(p.x - l.x) <= size.width { path.addLine(to: p) } else { path.move(to: p) }
+            last = p
+        }
+        ctx.stroke(path, with: .color(.white.opacity(0.55)),
+                   style: StrokeStyle(lineWidth: 1.5, lineCap: .round, dash: [6, 5]))
+    }
+
+    /// Dot with a label, e.g. an airport.
+    func drawMarker(_ p: SIMD2<Double>, color: Color, label: String?) {
+        let s = screenNearest(p)
+        ctx.fill(Path(ellipseIn: CGRect(x: s.x - 7, y: s.y - 7, width: 14, height: 14)), with: .color(.white))
+        ctx.fill(Path(ellipseIn: CGRect(x: s.x - 4.5, y: s.y - 4.5, width: 9, height: 9)), with: .color(color))
+        if let label {
+            ctx.draw(Text(label).font(.system(size: 12, weight: .bold, design: .monospaced)).foregroundColor(.white),
+                     at: CGPoint(x: s.x + 9, y: s.y - 9), anchor: .bottomLeading)
+        }
     }
 
     func drawPosition(_ l: CLLocation, heading: CLHeading?) {

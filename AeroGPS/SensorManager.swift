@@ -29,6 +29,8 @@ final class SensorManager: NSObject, ObservableObject {
     @Published var isPaused = false
     /// Also print synthesized $GPGGA / $GPRMC sentences for each fix.
     @Published var emitNMEA = true
+    /// Called for every location fix (used by the trip recorder).
+    var onFix: (@MainActor (CLLocation) -> Void)?
 
     // MARK: - Private
 
@@ -302,6 +304,7 @@ final class SensorManager: NSObject, ObservableObject {
             fixCount += 1
             location = l
             addToTrack(l)
+            onFix?(l)
             append(describe(l))
             if emitNMEA {
                 append(nmeaGGA(l))

@@ -14,6 +14,13 @@
 		A1B2C3D4E5F600000000001B /* MapScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6000000000018 /* MapScreen.swift */; };
 		A1B2C3D4E5F600000000001C /* WorldMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6000000000019 /* WorldMap.swift */; };
 		A1B2C3D4E5F600000000001D /* worldmap.bin in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F600000000001A /* worldmap.bin */; };
+		A1B2C3D4E5F6000000000030 /* Airports.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6000000000020 /* Airports.swift */; };
+		A1B2C3D4E5F6000000000031 /* Trip.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6000000000021 /* Trip.swift */; };
+		A1B2C3D4E5F6000000000032 /* TripStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6000000000022 /* TripStore.swift */; };
+		A1B2C3D4E5F6000000000033 /* TripsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6000000000023 /* TripsScreen.swift */; };
+		A1B2C3D4E5F6000000000034 /* TripDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6000000000024 /* TripDetailView.swift */; };
+		A1B2C3D4E5F6000000000035 /* TripMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6000000000025 /* TripMapView.swift */; };
+		A1B2C3D4E5F6000000000036 /* airports.tsv in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6000000000026 /* airports.tsv */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -26,6 +33,13 @@
 		A1B2C3D4E5F6000000000019 /* WorldMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorldMap.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F600000000001A /* worldmap.bin */ = {isa = PBXFileReference; lastKnownFileType = archive.macbinary; path = worldmap.bin; sourceTree = "<group>"; };
 		A1B2C3D4E5F600000000001E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A1B2C3D4E5F6000000000020 /* Airports.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Airports.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6000000000021 /* Trip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Trip.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6000000000022 /* TripStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripStore.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6000000000023 /* TripsScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripsScreen.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6000000000024 /* TripDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripDetailView.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6000000000025 /* TripMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripMapView.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6000000000026 /* airports.tsv */ = {isa = PBXFileReference; lastKnownFileType = text; path = airports.tsv; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -55,6 +69,13 @@
 				A1B2C3D4E5F6000000000009 /* ContentView.swift */,
 				A1B2C3D4E5F6000000000018 /* MapScreen.swift */,
 				A1B2C3D4E5F6000000000019 /* WorldMap.swift */,
+				A1B2C3D4E5F6000000000020 /* Airports.swift */,
+				A1B2C3D4E5F6000000000021 /* Trip.swift */,
+				A1B2C3D4E5F6000000000022 /* TripStore.swift */,
+				A1B2C3D4E5F6000000000023 /* TripsScreen.swift */,
+				A1B2C3D4E5F6000000000024 /* TripDetailView.swift */,
+				A1B2C3D4E5F6000000000025 /* TripMapView.swift */,
+				A1B2C3D4E5F6000000000026 /* airports.tsv */,
 				A1B2C3D4E5F600000000001A /* worldmap.bin */,
 				A1B2C3D4E5F600000000001E /* Info.plist */,
 				A1B2C3D4E5F600000000000A /* Assets.xcassets */,
@@ -130,6 +151,7 @@
 			files = (
 				A1B2C3D4E5F600000000000E /* Assets.xcassets in Resources */,
 				A1B2C3D4E5F600000000001D /* worldmap.bin in Resources */,
+				A1B2C3D4E5F6000000000036 /* airports.tsv in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -145,6 +167,12 @@
 				A1B2C3D4E5F600000000000D /* ContentView.swift in Sources */,
 				A1B2C3D4E5F600000000001B /* MapScreen.swift in Sources */,
 				A1B2C3D4E5F600000000001C /* WorldMap.swift in Sources */,
+				A1B2C3D4E5F6000000000035 /* TripMapView.swift in Sources */,
+				A1B2C3D4E5F6000000000034 /* TripDetailView.swift in Sources */,
+				A1B2C3D4E5F6000000000033 /* TripsScreen.swift in Sources */,
+				A1B2C3D4E5F6000000000032 /* TripStore.swift in Sources */,
+				A1B2C3D4E5F6000000000031 /* Trip.swift in Sources */,
+				A1B2C3D4E5F6000000000030 /* Airports.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

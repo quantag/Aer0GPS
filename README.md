@@ -1,12 +1,14 @@
 # AeroGPS
 
-iOS app with two tabs:
+iOS app with three tabs:
 
 - **Data**: live GPS position, accelerometer and compass, plus a scrollable log of
   every location/heading callback iOS delivers (all fields) and synthesized NMEA
   `$GPGGA` / `$GPRMC` lines.
 - **Map**: a fully offline world map (no network, no tiles) with your position,
   accuracy circle, direction arrow and flown track.
+- **Trips**: record flights, keep every trip, see statistics, view each route on the
+  map and export a flight logbook.
 
 ## What "low level" means on iOS
 
@@ -131,6 +133,41 @@ unit space, x and y in 0...1): `"WMAP"`, u32 version=1, u32 layerCount=6, then
 layers land/land-coarse/lakes/lakes-coarse/borders/borders-coarse as
 `u32 shapes { u32 rings { u32 n, n × (f32 x, f32 y) } }`, then
 `u32 cities { f32 x, f32 y, u8 scalerank, u8 len, UTF-8 name }`.
+
+## Trips tab
+
+- **Start recording now** starts a trip immediately; details can be added later.
+  **New trip with flight details…** lets you enter From / To (IATA or ICAO code, or
+  search by city), flight number, airline, aircraft, seat and notes first.
+- **Airports are detected automatically**: the departure is the airport nearest
+  (within 10 km) to the start of the takeoff roll, the arrival the one nearest to
+  the end of the landing roll. A code you typed is never replaced, except with
+  **Detect airports from track** on the trip screen.
+- "Airborne" means sustained ground speed above 35 m/s (68 kt). Flight time is from
+  the first to the last moment at that speed. If recording started or stopped in
+  the air, the value is marked *partial*.
+- Statistics per trip: flight time, recorded time, distance flown, great-circle
+  route distance, max and average ground speed, max altitude, max climb / descent
+  rate, number of fixes and longest GPS gap. The list shows totals for all trips
+  (air time, distance, airports and countries, highest, fastest, longest).
+- Tap a trip to see its route on the offline map (recorded track in yellow,
+  great-circle route dashed, departure green, arrival red), plus an altitude /
+  speed profile. The map has a full-screen mode.
+- Export: one trip as GPX, CSV (every fix) or a text summary; the share button in
+  the list exports the whole logbook as CSV (one row per flight) plus one GPX
+  with all tracks.
+- Recording keeps at most one point per second (about 3 MB for a 10-hour flight),
+  skips stale fixes, and writes to disk every 10 s. If the app is killed while
+  recording, the trip continues recording after the next launch.
+
+Storage: `Application Support/Trips/<uuid>/trip.json` (details + cached
+statistics) and `points.csv` (`t,lat,lon,alt,hAcc,vAcc,spd,spdAcc,crs` per line).
+Included in device backups.
+
+Airports: `airports.tsv` (~7,950 airports with an IATA code, 630 KB) is built from
+[airportsdata](https://github.com/mborsetti/airportsdata) (MIT). Columns: IATA,
+ICAO, name, city, country, lat, lon, time zone. Takeoff and landing times are shown
+in the airport's local time.
 
 ## Tuning
 
