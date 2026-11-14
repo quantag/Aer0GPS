@@ -1,12 +1,14 @@
 # AeroGPS
 
-iOS app with two tabs:
+iOS app with three tabs:
 
 - **Data**: live GPS position, accelerometer and compass, plus a scrollable log of
   every location/heading callback iOS delivers (all fields) and synthesized NMEA
   `$GPGGA` / `$GPRMC` lines.
 - **Map**: a fully offline world map (no network, no tiles) with your position,
   accuracy circle, direction arrow and flown track.
+- **Trips**: record flights, keep every trip, see statistics, view each route on the
+  map and export a flight logbook.
 
 ## What "low level" means on iOS
 
@@ -96,8 +98,23 @@ Extra log lines that explain gaps:
 - `GAP  no location callbacks for Ns` — iOS sent nothing for that long
 - `WARN no fresh fix for Ns` — callbacks may arrive, but only stale fixes
 - `APP  watchdog: restarted location updates` — after 60 s with no fresh fix,
-  then at most every 5 min
+  then at most every 5 min, **only while the app is on screen**. In the background
+  the watchdog only logs: with When-In-Use permission, stopping location updates
+  there would end the app's background session and iOS would suspend it (this used
+  to end recordings with the screen locked). On iOS 17+ the app also holds a
+  `CLBackgroundActivitySession`.
 - `ERR  code=0 locationUnknown` — no fix right now; CoreLocation keeps trying
+
+Persistent event log: every line except `LOC`, NMEA and `HDG` is also written to
+`Application Support/Logs/events.log` (trimmed at 2 MB), plus a `BEAT` line every
+60 s with app state, fix count, battery and thermal state. On launch the Data tab
+shows the previous run's last events as `PREV` lines, so if the app was killed you
+can see when, and in which state. Share it with the share menu → "Share event log".
+iOS's own reasons for terminations (memory / CPU limit, crash, …) arrive later via
+MetricKit and are logged as `EXIT` / `CRASH` / `CPU` lines.
+
+Swiping the app away in the app switcher ends recording; iOS can also end a
+background app under heavy memory pressure. A recording trip resumes on next launch.
 
 Running GPS continuously with the screen off uses battery; a 2-hour flight
 typically costs 10–20 %.
@@ -131,6 +148,41 @@ unit space, x and y in 0...1): `"WMAP"`, u32 version=1, u32 layerCount=6, then
 layers land/land-coarse/lakes/lakes-coarse/borders/borders-coarse as
 `u32 shapes { u32 rings { u32 n, n × (f32 x, f32 y) } }`, then
 `u32 cities { f32 x, f32 y, u8 scalerank, u8 len, UTF-8 name }`.
+
+## Trips tab
+
+- **Start recording now** starts a trip immediately; details can be added later.
+  **New trip with flight details…** lets you enter From / To (IATA or ICAO code, or
+  search by city), flight number, airline, aircraft, seat and notes first.
+- **Airports are detected automatically**: the departure is the airport nearest
+  (within 10 km) to the start of the takeoff roll, the arrival the one nearest to
+  the end of the landing roll. A code you typed is never replaced, except with
+  **Detect airports from track** on the trip screen.
+- "Airborne" means sustained ground speed above 35 m/s (68 kt). Flight time is from
+  the first to the last moment at that speed. If recording started or stopped in
+  the air, the value is marked *partial*.
+- Statistics per trip: flight time, recorded time, distance flown, great-circle
+  route distance, max and average ground speed, max altitude, max climb / descent
+  rate, number of fixes and longest GPS gap. The list shows totals for all trips
+  (air time, distance, airports and countries, highest, fastest, longest).
+- Tap a trip to see its route on the offline map (recorded track in yellow,
+  great-circle route dashed, departure green, arrival red), plus an altitude /
+  speed profile. The map has a full-screen mode.
+- Export: one trip as GPX, CSV (every fix) or a text summary; the share button in
+  the list exports the whole logbook as CSV (one row per flight) plus one GPX
+  with all tracks.
+- Recording keeps at most one point per second (about 3 MB for a 10-hour flight),
+  skips stale fixes, and writes to disk every 10 s. If the app is killed while
+  recording, the trip continues recording after the next launch.
+
+Storage: `Application Support/Trips/<uuid>/trip.json` (details + cached
+statistics) and `points.csv` (`t,lat,lon,alt,hAcc,vAcc,spd,spdAcc,crs` per line).
+Included in device backups.
+
+Airports: `airports.tsv` (~7,950 airports with an IATA code, 630 KB) is built from
+[airportsdata](https://github.com/mborsetti/airportsdata) (MIT). Columns: IATA,
+ICAO, name, city, country, lat, lon, time zone. Takeoff and landing times are shown
+in the airport's local time.
 
 ## Tuning
 

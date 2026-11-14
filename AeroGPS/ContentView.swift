@@ -134,7 +134,9 @@ struct ContentView: View {
     private func lineColor(_ text: String) -> Color {
         // Skip the "HH:mm:ss.SSS " prefix.
         let body = text.dropFirst(13)
-        if body.hasPrefix("ERR") || body.hasPrefix("WARN") || body.hasPrefix("GAP") { return .red }
+        if body.hasPrefix("PREV") { return .secondary }
+        if body.hasPrefix("ERR") || body.hasPrefix("WARN") || body.hasPrefix("GAP")
+            || body.hasPrefix("EXIT") || body.hasPrefix("CRASH") || body.hasPrefix("CPU") { return .red }
         if body.hasPrefix("$GP")  { return .blue }
         if body.hasPrefix("HDG")  { return .green }
         if body.hasPrefix("AUTH") || body.hasPrefix("APP") { return .orange }
@@ -152,7 +154,10 @@ struct ContentView: View {
             Toggle("Scroll", isOn: $autoScroll)
                 .toggleStyle(.button)
             Spacer()
-            ShareLink(item: s.logText) {
+            Menu {
+                ShareLink("Share this log", item: s.logText)
+                ShareLink("Share event log (all runs)", item: s.eventsURL)
+            } label: {
                 Image(systemName: "square.and.arrow.up")
             }
         }
