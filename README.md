@@ -98,8 +98,23 @@ Extra log lines that explain gaps:
 - `GAP  no location callbacks for Ns` — iOS sent nothing for that long
 - `WARN no fresh fix for Ns` — callbacks may arrive, but only stale fixes
 - `APP  watchdog: restarted location updates` — after 60 s with no fresh fix,
-  then at most every 5 min
+  then at most every 5 min, **only while the app is on screen**. In the background
+  the watchdog only logs: with When-In-Use permission, stopping location updates
+  there would end the app's background session and iOS would suspend it (this used
+  to end recordings with the screen locked). On iOS 17+ the app also holds a
+  `CLBackgroundActivitySession`.
 - `ERR  code=0 locationUnknown` — no fix right now; CoreLocation keeps trying
+
+Persistent event log: every line except `LOC`, NMEA and `HDG` is also written to
+`Application Support/Logs/events.log` (trimmed at 2 MB), plus a `BEAT` line every
+60 s with app state, fix count, battery and thermal state. On launch the Data tab
+shows the previous run's last events as `PREV` lines, so if the app was killed you
+can see when, and in which state. Share it with the share menu → "Share event log".
+iOS's own reasons for terminations (memory / CPU limit, crash, …) arrive later via
+MetricKit and are logged as `EXIT` / `CRASH` / `CPU` lines.
+
+Swiping the app away in the app switcher ends recording; iOS can also end a
+background app under heavy memory pressure. A recording trip resumes on next launch.
 
 Running GPS continuously with the screen off uses battery; a 2-hour flight
 typically costs 10–20 %.

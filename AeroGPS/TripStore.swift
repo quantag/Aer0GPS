@@ -148,7 +148,9 @@ final class TripStore: ObservableObject {
         activePoints.append(p)
         pending.append(p)
         if pending.count >= 30 || now.timeIntervalSince(lastFlush) >= 10 { flush() }
-        if now.timeIntervalSince(lastStatsUpdate) >= 5 {
+        // Live statistics: every 5 s on screen, every 60 s in the background (saves CPU and battery).
+        let statsInterval: TimeInterval = UIApplication.shared.applicationState == .active ? 5 : 60
+        if now.timeIntervalSince(lastStatsUpdate) >= statsInterval {
             lastStatsUpdate = now
             trips[i].stats = TripStats.compute(activePoints)
             trips[i].autoDetectAirports()

@@ -2,6 +2,7 @@ import Foundation
 import CoreLocation
 import CoreMotion
 import UIKit
+import MetricKit
 
 struct LogLine: Identifiable, Hashable {
     let id: Int
@@ -48,7 +49,22 @@ final class SensorManager: NSObject, ObservableObject {
     private var restartCount = 0
     private var noFixWarned = false
     private var watchdog: Timer?
+    private var watchdogTicks = 0
     private var observers: [NSObjectProtocol] = []
+    /// CLBackgroundActivitySession (iOS 17+): keeps a When-In-Use app receiving fixes in the background.
+    private var backgroundSession: AnyObject?
+    /// Persistent event log (everything except LOC / NMEA / HDG lines), survives the app being killed.
+    private var events: FileHandle?
+    let eventsURL: URL = {
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return support.appendingPathComponent("Logs", isDirectory: true).appendingPathComponent("events.log")
+    }()
+    private let fileClock: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return f
+    }()
 
     private let clock: DateFormatter = {
         let f = DateFormatter()
@@ -100,6 +116,16 @@ final class SensorManager: NSObject, ObservableObject {
         guard !started else { return }
         started = true
         UIApplication.shared.isIdleTimerDisabled = true
+
+        // Show how the previous run ended: its last persisted events (the in-memory log is gone).
+        let previous = previousEvents(20)
+        openEventLog()
+        if !previous.isEmpty {
+            append("APP  --- last \(previous.count) events of the previous run (from events.log) ---", persist: false)
+            for line in previous { append("PREV \(line)", persist: false) }
+            append("APP  --- end of previous run ---", persist: false)
+        }
+        MXMetricManager.shared.add(self)
 
         append("APP  start device=\(UIDevice.current.model) iOS=\(UIDevice.current.systemVersion)")
         append("APP  headingAvailable=\(CLLocationManager.headingAvailable()) accelAvailable=\(mm.isAccelerometerAvailable)")
@@ -214,8 +240,15 @@ final class SensorManager: NSObject, ObservableObject {
     }
 
     private func checkWatchdog() {
-        guard authStatus == .authorizedWhenInUse || authStatus == .authorizedAlways else { return }
         let now = Date()
+        // Heartbeat every 60 s, file only: the last BEAT shows when and in which state the app stopped running.
+        watchdogTicks += 1
+        if watchdogTicks % 12 == 0 {
+            let fresh = lastFreshFix.map { "\(Int(now.timeIntervalSince($0)))s ago" } ?? "never"
+            writeEvent("BEAT state=\(appStateName) fixes=\(fixCount) lastFreshFix=\(fresh) "
+                       + "battery=\(batteryText) thermal=\(thermalName) lowPower=\(ProcessInfo.processInfo.isLowPowerModeEnabled)")
+        }
+        guard authStatus == .authorizedWhenInUse || authStatus == .authorizedAlways else { return }
         let since = now.timeIntervalSince(lastFreshFix ?? lastRestart ?? now)
         if since >= 20 && !noFixWarned {
             noFixWarned = true
@@ -227,6 +260,14 @@ final class SensorManager: NSObject, ObservableObject {
         if since >= 60, now.timeIntervalSince(lastRestart ?? .distantPast) >= minGap {
             lastRestart = now
             restartCount += 1
+            // Never stop location updates while not in the foreground: with When-In-Use permission,
+            // stopping them there ends the app's right to run in the background and iOS suspends it
+            // before they can be started again. That silently ended recordings with the screen locked.
+            guard UIApplication.shared.applicationState == .active else {
+                append("APP  watchdog: no fresh fix for \(Int(since))s, app in \(appStateName) - not restarting "
+                       + "(would suspend the app); CoreLocation keeps searching")
+                return
+            }
             lm.stopUpdatingLocation()
             lm.startUpdatingLocation()
             append("APP  watchdog: restarted location updates (#\(restartCount)), no fresh fix for \(Int(since))s")
@@ -250,12 +291,55 @@ final class SensorManager: NSObject, ObservableObject {
 
     // MARK: - Logging
 
-    private func append(_ text: String) {
+    private func append(_ text: String, persist: Bool = true) {
+        if persist && !(text.hasPrefix("LOC") || text.hasPrefix("$GP") || text.hasPrefix("HDG")) {
+            writeEvent(text)
+        }
         guard !isPaused else { return }
         log.append(LogLine(id: nextID, text: "\(clock.string(from: Date())) \(text)"))
         nextID += 1
         if log.count > maxLines {
             log.removeFirst(log.count - maxLines)
+        }
+    }
+
+    // MARK: - Persistent event log
+
+    private func openEventLog() {
+        let fm = FileManager.default
+        try? fm.createDirectory(at: eventsURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        // Keep the file small: when it passes 2 MB, keep the last 1 MB.
+        if let size = (try? fm.attributesOfItem(atPath: eventsURL.path))?[.size] as? Int, size > 2_000_000,
+           let data = try? Data(contentsOf: eventsURL) {
+            var tail = data.suffix(1_000_000)
+            if let nl = tail.firstIndex(of: 0x0A) { tail = tail[(nl + 1)...] }   // start on a whole line
+            try? Data(tail).write(to: eventsURL, options: .atomic)
+        }
+        if !fm.fileExists(atPath: eventsURL.path) {
+            fm.createFile(atPath: eventsURL.path, contents: nil)
+        }
+        events = try? FileHandle(forWritingTo: eventsURL)
+        _ = try? events?.seekToEnd()
+    }
+
+    private func writeEvent(_ text: String) {
+        guard let events else { return }
+        let line = "\(fileClock.string(from: Date())) \(text)\n"
+        try? events.write(contentsOf: Data(line.utf8))
+    }
+
+    private func previousEvents(_ n: Int) -> [String] {
+        guard let data = try? Data(contentsOf: eventsURL) else { return [] }
+        let text = String(decoding: data.suffix(20_000), as: UTF8.self)
+        return text.split(separator: "\n").suffix(n).map(String.init)
+    }
+
+    private var appStateName: String {
+        switch UIApplication.shared.applicationState {
+        case .active:     return "active"
+        case .inactive:   return "inactive"
+        case .background: return "background"
+        @unknown default: return "unknown"
         }
     }
 
@@ -274,6 +358,10 @@ final class SensorManager: NSObject, ObservableObject {
         case .authorizedWhenInUse, .authorizedAlways:
             manager.startUpdatingLocation()
             lastRestart = Date()
+            if #available(iOS 17.0, *), backgroundCapable, backgroundSession == nil {
+                backgroundSession = CLBackgroundActivitySession()
+                append("APP  background activity session started")
+            }
             if CLLocationManager.headingAvailable() {
                 manager.startUpdatingHeading()
             }
@@ -415,5 +503,54 @@ extension SensorManager: CLLocationManagerDelegate {
 
     nonisolated func locationManagerShouldDisplayHeadingCalibration(_ manager: CLLocationManager) -> Bool {
         true
+    }
+}
+
+// MARK: - MetricKit
+//
+// iOS reports why the app was terminated (memory limit, CPU limit, crash, …) in later payloads:
+// exit counts about once a day, crash diagnostics on the next launch. They go to the event log.
+
+extension SensorManager: MXMetricManagerSubscriber {
+
+    nonisolated func didReceive(_ payloads: [MXMetricPayload]) {
+        var lines: [String] = []
+        for p in payloads {
+            guard let exits = p.applicationExitMetrics else { continue }
+            let b = exits.backgroundExitData
+            lines.append("EXIT background exits \(p.timeStampBegin)–\(p.timeStampEnd): "
+                + "normal=\(b.cumulativeNormalAppExitCount) memoryLimit=\(b.cumulativeMemoryResourceLimitExitCount) "
+                + "memoryPressure=\(b.cumulativeMemoryPressureExitCount) cpuLimit=\(b.cumulativeCPUResourceLimitExitCount) "
+                + "watchdog=\(b.cumulativeAppWatchdogExitCount) crash=\(b.cumulativeAbnormalExitCount) "
+                + "badAccess=\(b.cumulativeBadAccessExitCount) illegalInstr=\(b.cumulativeIllegalInstructionExitCount) "
+                + "lockedFile=\(b.cumulativeSuspendedWithLockedFileExitCount) "
+                + "taskTimeout=\(b.cumulativeBackgroundTaskAssertionTimeoutExitCount)")
+            let f = exits.foregroundExitData
+            lines.append("EXIT foreground exits: normal=\(f.cumulativeNormalAppExitCount) "
+                + "memoryLimit=\(f.cumulativeMemoryResourceLimitExitCount) watchdog=\(f.cumulativeAppWatchdogExitCount) "
+                + "crash=\(f.cumulativeAbnormalExitCount) badAccess=\(f.cumulativeBadAccessExitCount)")
+        }
+        guard !lines.isEmpty else { return }
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated { lines.forEach { self?.append($0) } }
+        }
+    }
+
+    nonisolated func didReceive(_ payloads: [MXDiagnosticPayload]) {
+        var lines: [String] = []
+        for p in payloads {
+            for c in p.crashDiagnostics ?? [] {
+                lines.append("CRASH \(p.timeStampBegin): exception=\(c.exceptionType.map { "\($0)" } ?? "-") "
+                    + "code=\(c.exceptionCode.map { "\($0)" } ?? "-") signal=\(c.signal.map { "\($0)" } ?? "-") "
+                    + "reason=\(c.terminationReason ?? "-")")
+            }
+            for c in p.cpuExceptionDiagnostics ?? [] {
+                lines.append("CPU  \(p.timeStampBegin): too much CPU in background, \(c.totalCPUTime) over \(c.totalSampledTime)")
+            }
+        }
+        guard !lines.isEmpty else { return }
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated { lines.forEach { self?.append($0) } }
+        }
     }
 }
