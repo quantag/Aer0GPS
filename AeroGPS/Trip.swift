@@ -79,6 +79,15 @@ struct TripStats: Codable, Hashable {
     var endLat: Double?, endLon: Double?
     var takeoffLat: Double?, takeoffLon: Double?
     var landingLat: Double?, landingLon: Double?
+    // Added in stats version 2 (optional so stats saved by older versions still decode).
+    var version: Int?
+    var movingTime: Double?             // s at more than 1.5 m/s (5 km/h)
+    var minAltitude: Double?            // m MSL
+    var ascent: Double?                 // m total climb (10 m hysteresis)
+    var descent: Double?                // m total descent
+
+    /// Bump when `compute` changes; trips with older stats are recomputed on load.
+    static let currentVersion = 2
 
     var takeoff: Date? { startedAirborne ? nil : airborneStart }
     var landing: Date? { endedAirborne ? nil : airborneEnd }
@@ -94,6 +103,7 @@ struct TripStats: Codable, Hashable {
 
     static func compute(_ pts: [TripPoint]) -> TripStats {
         var s = TripStats()
+        s.version = currentVersion
         s.pointCount = pts.count
         guard let first = pts.first, let last = pts.last else { return s }
         s.firstFix = first.date
@@ -132,6 +142,26 @@ struct TripStats: Codable, Hashable {
         // Altitude and vertical speed (over 30–90 s windows to smooth GPS altitude noise).
         let alts = pts.filter(\.hasGoodAltitude)
         s.maxAltitude = alts.map { Double($0.alt) }.max()
+        s.minAltitude = alts.map { Double($0.alt) }.min()
+
+        // Total ascent / descent with 10 m hysteresis (filters GPS altitude noise).
+        if let first = alts.first {
+            var ref = Double(first.alt), up = 0.0, down = 0.0
+            for p in alts {
+                let a = Double(p.alt)
+                if a > ref + 10 { up += a - ref; ref = a } else if a < ref - 10 { down += ref - a; ref = a }
+            }
+            s.ascent = up
+            s.descent = down
+        }
+
+        // Moving time: intervals of at most 30 s between two fixes that are both moving.
+        var moving = 0.0
+        for i in pts.indices.dropFirst() {
+            let a = pts[i - 1], b = pts[i], dt = b.t - a.t
+            if dt > 0 && dt <= 30 && a.spd >= 1.5 && b.spd >= 1.5 { moving += dt }
+        }
+        s.movingTime = moving
         var j = 0
         for i in alts.indices {
             if j < i { j = i }
@@ -172,15 +202,27 @@ struct TripStats: Codable, Hashable {
 
 // MARK: - Trip
 
+enum TripKind: String, Codable, CaseIterable, Identifiable {
+    case airplane
+    case car
+
+    var id: String { rawValue }
+    var name: String { self == .airplane ? "Airplane" : "Auto" }
+    var icon: String { self == .airplane ? "airplane" : "car.fill" }
+}
+
 struct Trip: Codable, Identifiable, Hashable {
     var id = UUID()
     var created = Date()
-    var from = ""               // IATA (or ICAO) code
+    var kind = TripKind.airplane
+    /// Airplane: IATA (or ICAO) code. Auto: optional free text (city, address…).
+    var from = ""
     var to = ""
     var flightNumber = ""
     var airline = ""
     var aircraft = ""
     var seat = ""
+    var vehicle = ""            // Auto: car, plate, …
     var notes = ""
     /// from / to were filled automatically from the track (so a better detection may replace them).
     var autoFrom = false
@@ -189,18 +231,29 @@ struct Trip: Codable, Identifiable, Hashable {
     var isRecording = false
     var stats = TripStats()
 
-    var fromAirport: Airport? { Airports.shared.find(from) }
-    var toAirport: Airport? { Airports.shared.find(to) }
+    var isFlight: Bool { kind == .airplane }
+    var fromAirport: Airport? { isFlight ? Airports.shared.find(from) : nil }
+    var toAirport: Airport? { isFlight ? Airports.shared.find(to) : nil }
     var date: Date { stats.firstFix ?? created }
 
-    /// "BGO → AMS"
+    /// "BGO → AMS"; for Auto "Bergen → Voss", "Bergen → …" or "Drive" when no route was entered.
     var route: String {
-        let a = from.isEmpty ? "???" : from.uppercased()
-        let b = to.isEmpty ? "???" : to.uppercased()
-        return "\(a) → \(b)"
+        if isFlight {
+            let a = from.isEmpty ? "???" : from.uppercased()
+            let b = to.isEmpty ? "???" : to.uppercased()
+            return "\(a) → \(b)"
+        }
+        if from.isEmpty && to.isEmpty { return "Drive" }
+        return "\(from.isEmpty ? "…" : from) → \(to.isEmpty ? "…" : to)"
     }
 
-    var title: String { flightNumber.isEmpty ? route : "\(route)  \(flightNumber.uppercased())" }
+    var title: String {
+        guard isFlight, !flightNumber.isEmpty else { return route }
+        return "\(route)  \(flightNumber.uppercased())"
+    }
+
+    /// Time spent travelling: air time for flights, moving time for drives.
+    var travelTime: TimeInterval? { isFlight ? stats.airTime : stats.movingTime }
 
     /// Departure airport: nearest to the takeoff roll, or to the first fix if that was on the ground.
     var detectedDeparture: Airport? {
@@ -224,6 +277,7 @@ struct Trip: Codable, Identifiable, Hashable {
     /// Returns true if anything changed.
     @discardableResult
     mutating func autoDetectAirports(overwrite: Bool = false) -> Bool {
+        guard isFlight else { return false }
         var changed = false
         if overwrite || from.isEmpty || autoFrom, let a = detectedDeparture, a.iata != from || !autoFrom {
             from = a.iata; autoFrom = true; changed = true
@@ -244,11 +298,40 @@ struct Trip: Codable, Identifiable, Hashable {
     var fileName: String {
         let d = Fmt.day.string(from: date)
         var parts = [d]
-        if !from.isEmpty || !to.isEmpty { parts.append("\(from.isEmpty ? "XXX" : from)-\(to.isEmpty ? "XXX" : to)") }
-        if !flightNumber.isEmpty { parts.append(flightNumber) }
-        let name = parts.joined(separator: " ").uppercased()
+        if isFlight {
+            if !from.isEmpty || !to.isEmpty { parts.append("\(from.isEmpty ? "XXX" : from)-\(to.isEmpty ? "XXX" : to)") }
+            if !flightNumber.isEmpty { parts.append(flightNumber) }
+        } else {
+            parts.append(from.isEmpty && to.isEmpty ? "Drive" : "\(from.isEmpty ? "start" : from)-\(to.isEmpty ? "end" : to)")
+        }
+        let joined = parts.joined(separator: " ")
+        let name = isFlight ? joined.uppercased() : joined
         let bad = CharacterSet(charactersIn: "/\\:*?\"<>|")
         return name.components(separatedBy: bad).joined(separator: "_")
+    }
+}
+
+extension Trip {
+    /// Missing keys get their defaults, so trips saved by older versions (no `kind`, `vehicle`) still load
+    /// (as Airplane trips).
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init()
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? id
+        created = try c.decodeIfPresent(Date.self, forKey: .created) ?? created
+        kind = (try? c.decodeIfPresent(TripKind.self, forKey: .kind)) ?? .airplane
+        from = try c.decodeIfPresent(String.self, forKey: .from) ?? ""
+        to = try c.decodeIfPresent(String.self, forKey: .to) ?? ""
+        flightNumber = try c.decodeIfPresent(String.self, forKey: .flightNumber) ?? ""
+        airline = try c.decodeIfPresent(String.self, forKey: .airline) ?? ""
+        aircraft = try c.decodeIfPresent(String.self, forKey: .aircraft) ?? ""
+        seat = try c.decodeIfPresent(String.self, forKey: .seat) ?? ""
+        vehicle = try c.decodeIfPresent(String.self, forKey: .vehicle) ?? ""
+        notes = try c.decodeIfPresent(String.self, forKey: .notes) ?? ""
+        autoFrom = try c.decodeIfPresent(Bool.self, forKey: .autoFrom) ?? false
+        autoTo = try c.decodeIfPresent(Bool.self, forKey: .autoTo) ?? false
+        isRecording = try c.decodeIfPresent(Bool.self, forKey: .isRecording) ?? false
+        stats = (try? c.decodeIfPresent(TripStats.self, forKey: .stats)) ?? TripStats()
     }
 }
 
@@ -301,14 +384,29 @@ enum Fmt {
         return "\(total)s"
     }
 
-    static func speed(_ mps: Double?) -> String {
+    /// Flights in knots (km/h), drives in km/h (mph).
+    static func speed(_ mps: Double?, _ kind: TripKind = .airplane) -> String {
         guard let v = mps, v > 0 else { return "—" }
-        return String(format: "%.0f kt  (%.0f km/h)", v * 1.943844, v * 3.6)
+        return kind == .airplane
+            ? String(format: "%.0f kt  (%.0f km/h)", v * 1.943844, v * 3.6)
+            : String(format: "%.0f km/h  (%.0f mph)", v * 3.6, v * 2.236936)
     }
 
-    static func altitude(_ m: Double?) -> String {
+    /// Flights in feet (m), drives in metres (ft).
+    static func altitude(_ m: Double?, _ kind: TripKind = .airplane) -> String {
         guard let m else { return "—" }
-        return String(format: "%@ ft  (%@ m)", group(m * 3.28084), group(m))
+        return kind == .airplane
+            ? String(format: "%@ ft  (%@ m)", group(m * 3.28084), group(m))
+            : String(format: "%@ m  (%@ ft)", group(m), group(m * 3.28084))
+    }
+
+    /// Short single-unit forms for compact rows.
+    static func speedShort(_ mps: Double, _ kind: TripKind) -> String {
+        mps > 0 ? (kind == .airplane ? "\(group(mps * 1.943844)) kt" : "\(group(mps * 3.6)) km/h") : "—"
+    }
+    static func altitudeShort(_ m: Double?, _ kind: TripKind) -> String {
+        guard let m else { return "—" }
+        return kind == .airplane ? "\(group(m * 3.28084)) ft" : "\(group(m)) m"
     }
 
     static func distance(_ m: Double?) -> String {
@@ -372,25 +470,30 @@ enum TripExport {
         return out
     }
 
-    /// Flight logbook: one row per trip, oldest first.
+    /// Travel logbook: one row per trip, oldest first. Flight-only columns are empty for Auto trips.
     static func logbookCSV(_ trips: [Trip]) -> String {
-        let cols = ["date", "flight", "airline", "aircraft", "seat", "from", "from_name", "to", "to_name",
-                    "first_fix_utc", "takeoff_utc", "landing_utc", "last_fix_utc", "air_time_min",
-                    "recorded_min", "track_km", "route_km", "max_speed_kt", "max_alt_ft",
-                    "max_climb_fpm", "max_descent_fpm", "points", "notes"]
+        let cols = ["date", "type", "flight", "airline", "aircraft", "seat", "vehicle", "from", "from_name", "to", "to_name",
+                    "first_fix_utc", "takeoff_utc", "landing_utc", "last_fix_utc", "air_time_min", "moving_min",
+                    "recorded_min", "track_km", "route_km", "max_speed_kt", "max_speed_kmh", "max_alt_ft", "max_alt_m",
+                    "max_climb_fpm", "max_descent_fpm", "ascent_m", "descent_m", "points", "notes"]
         var out = cols.joined(separator: ",") + "\n"
         func t(_ d: Date?) -> String { d.map { Fmt.iso.string(from: $0) } ?? "" }
         func n(_ v: Double?, _ dec: Int = 0) -> String { v.map { String(format: "%.\(dec)f", $0) } ?? "" }
         for trip in trips.sorted(by: { $0.date < $1.date }) {
             let s = trip.stats
+            let fl = trip.isFlight
             let row: [String] = [
-                Fmt.day.string(from: trip.date), trip.flightNumber, trip.airline, trip.aircraft, trip.seat,
+                Fmt.day.string(from: trip.date), trip.kind.name,
+                fl ? trip.flightNumber : "", fl ? trip.airline : "", fl ? trip.aircraft : "", fl ? trip.seat : "",
+                fl ? "" : trip.vehicle,
                 trip.from, trip.fromAirport?.name ?? "", trip.to, trip.toAirport?.name ?? "",
-                t(s.firstFix), t(s.takeoff), t(s.landing), t(s.lastFix),
-                n(s.airTime.map { $0 / 60 }), n(s.duration.map { $0 / 60 }),
+                t(s.firstFix), fl ? t(s.takeoff) : "", fl ? t(s.landing) : "", t(s.lastFix),
+                fl ? n(s.airTime.map { $0 / 60 }) : "", n(s.movingTime.map { $0 / 60 }), n(s.duration.map { $0 / 60 }),
                 n(s.distance / 1000, 1), n(trip.routeDistance.map { $0 / 1000 }, 1),
-                n(s.maxSpeed * 1.943844), n(s.maxAltitude.map { $0 * 3.28084 }),
-                n(s.maxClimb * 196.85), n(s.maxDescent * 196.85), "\(s.pointCount)", trip.notes,
+                n(s.maxSpeed * 1.943844), n(s.maxSpeed * 3.6),
+                n(s.maxAltitude.map { $0 * 3.28084 }), n(s.maxAltitude),
+                n(s.maxClimb * 196.85), n(s.maxDescent * 196.85), n(s.ascent), n(s.descent),
+                "\(s.pointCount)", trip.notes,
             ]
             out += row.map(csvField).joined(separator: ",") + "\n"
         }
@@ -400,11 +503,34 @@ enum TripExport {
     /// Human-readable summary of one trip.
     static func summary(_ trip: Trip) -> String {
         let s = trip.stats
-        var lines = ["AeroGPS trip: \(trip.title)"]
+        let k = trip.kind
+        var lines = ["AeroGPS \(k == .airplane ? "flight" : "drive"): \(trip.title)"]
+        func add(_ label: String, _ value: String) {
+            lines.append("\(label):".padding(toLength: 12, withPad: " ", startingAt: 0) + value)
+        }
+        if !trip.isFlight {
+            if !trip.from.isEmpty { add("From", trip.from) }
+            if !trip.to.isEmpty { add("To", trip.to) }
+            if !trip.vehicle.isEmpty { add("Vehicle", trip.vehicle) }
+            if let d = s.firstFix { add("Start", Fmt.dateTime.string(from: d)) }
+            if let d = s.lastFix { add("End", Fmt.dateTime.string(from: d)) }
+            add("Driving", Fmt.duration(s.movingTime))
+            add("Recorded", Fmt.duration(s.duration))
+            add("Distance", Fmt.distance(s.distance))
+            add("Max speed", Fmt.speed(s.maxSpeed, k))
+            if let m = s.movingTime, m > 60 { add("Avg speed", Fmt.speed(s.distance / m, k)) }
+            add("Max alt", Fmt.altitude(s.maxAltitude, k))
+            add("Min alt", Fmt.altitude(s.minAltitude, k))
+            add("Ascent", s.ascent.map { "\(Fmt.group($0)) m" } ?? "—")
+            add("Descent", s.descent.map { "\(Fmt.group($0)) m" } ?? "—")
+            add("Fixes", "\(s.pointCount), longest gap \(Fmt.duration(s.longestGap))")
+            if !trip.notes.isEmpty { add("Notes", trip.notes) }
+            return lines.joined(separator: "\n") + "\n"
+        }
         if let a = trip.fromAirport { lines.append("From:       \(a.iata) \(a.title)") }
         if let a = trip.toAirport { lines.append("To:         \(a.iata) \(a.title)") }
-        for (k, v) in [("Airline", trip.airline), ("Aircraft", trip.aircraft), ("Seat", trip.seat)] where !v.isEmpty {
-            lines.append("\(k):".padding(toLength: 12, withPad: " ", startingAt: 0) + v)
+        for (label, v) in [("Airline", trip.airline), ("Aircraft", trip.aircraft), ("Seat", trip.seat)] where !v.isEmpty {
+            add(label, v)
         }
         if let d = s.firstFix { lines.append("First fix:  \(Fmt.dateTime.string(from: d))") }
         if let d = s.takeoff { lines.append("Takeoff:    \(Fmt.localTime(d, trip.fromAirport))") }
