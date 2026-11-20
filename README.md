@@ -151,19 +151,19 @@ layers land/land-coarse/lakes/lakes-coarse/borders/borders-coarse as
 
 ## Trips tab
 
-Two trip types: **Airplane** and **Auto**. The type can be changed later in the trip's
+Two trip types: **Airplane** and **Car**. The type can be changed later in the trip's
 details (all statistics are kept; only how they are shown changes).
 
 - **Start flight** / **Start drive** start recording immediately; details can be
   added later. **New trip with details…** lets you pick the type and enter details first.
 - **Airplane**: From / To are airports (IATA or ICAO code, or search by city), plus
   flight number, airline, aircraft, seat and notes. Speeds in kt, altitudes in ft.
-- **Auto**: the route is optional free text (drive wherever you like), plus vehicle
+- **Car**: the route is optional free text (drive wherever you like), plus vehicle
   and notes. No airport detection. Statistics: driving time (moving faster than
   5 km/h), stopped time, distance, max and average speed, max / min altitude, total
   ascent / descent. Speeds in km/h, altitudes in m. The map marks the start and end
   of the track.
-- The list can be filtered by type (All / Airplane / Auto); totals follow the filter.
+- The list can be filtered by type (All / Airplane / Car); totals follow the filter.
 - **Airports are detected automatically**: the departure is the airport nearest
   (within 10 km) to the start of the takeoff roll, the arrival the one nearest to
   the end of the landing roll. A code you typed is never replaced, except with

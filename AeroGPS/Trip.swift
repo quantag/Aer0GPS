@@ -207,7 +207,7 @@ enum TripKind: String, Codable, CaseIterable, Identifiable {
     case car
 
     var id: String { rawValue }
-    var name: String { self == .airplane ? "Airplane" : "Auto" }
+    var name: String { self == .airplane ? "Airplane" : "Car" }
     var icon: String { self == .airplane ? "airplane" : "car.fill" }
 }
 
@@ -215,14 +215,14 @@ struct Trip: Codable, Identifiable, Hashable {
     var id = UUID()
     var created = Date()
     var kind = TripKind.airplane
-    /// Airplane: IATA (or ICAO) code. Auto: optional free text (city, address…).
+    /// Airplane: IATA (or ICAO) code. Car: optional free text (city, address…).
     var from = ""
     var to = ""
     var flightNumber = ""
     var airline = ""
     var aircraft = ""
     var seat = ""
-    var vehicle = ""            // Auto: car, plate, …
+    var vehicle = ""            // Car: model, plate, …
     var notes = ""
     /// from / to were filled automatically from the track (so a better detection may replace them).
     var autoFrom = false
@@ -236,7 +236,7 @@ struct Trip: Codable, Identifiable, Hashable {
     var toAirport: Airport? { isFlight ? Airports.shared.find(to) : nil }
     var date: Date { stats.firstFix ?? created }
 
-    /// "BGO → AMS"; for Auto "Bergen → Voss", "Bergen → …" or "Drive" when no route was entered.
+    /// "BGO → AMS"; for Car "Bergen → Voss", "Bergen → …" or "Drive" when no route was entered.
     var route: String {
         if isFlight {
             let a = from.isEmpty ? "???" : from.uppercased()
@@ -470,7 +470,7 @@ enum TripExport {
         return out
     }
 
-    /// Travel logbook: one row per trip, oldest first. Flight-only columns are empty for Auto trips.
+    /// Travel logbook: one row per trip, oldest first. Flight-only columns are empty for Car trips.
     static func logbookCSV(_ trips: [Trip]) -> String {
         let cols = ["date", "type", "flight", "airline", "aircraft", "seat", "vehicle", "from", "from_name", "to", "to_name",
                     "first_fix_utc", "takeoff_utc", "landing_utc", "last_fix_utc", "air_time_min", "moving_min",
