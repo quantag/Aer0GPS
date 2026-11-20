@@ -237,6 +237,45 @@ final class TripStore: ObservableObject {
         save(trips[i])
     }
 
+    // MARK: - Notes
+
+    /// Adds the note, or replaces the one with the same id. Notes are kept in time order.
+    func saveNote(_ note: TripNote, in tripID: UUID) {
+        guard let i = trips.firstIndex(where: { $0.id == tripID }) else { return }
+        if let j = trips[i].tripNotes.firstIndex(where: { $0.id == note.id }) {
+            trips[i].tripNotes[j] = note
+        } else {
+            trips[i].tripNotes.append(note)
+        }
+        trips[i].tripNotes.sort { $0.date < $1.date }
+        save(trips[i])
+    }
+
+    func deleteNote(_ noteID: UUID, in tripID: UUID) {
+        guard let i = trips.firstIndex(where: { $0.id == tripID }) else { return }
+        trips[i].tripNotes.removeAll { $0.id == noteID }
+        save(trips[i])
+    }
+
+    /// A new note at the current position: the latest GPS fix if recent, else the trip's last recorded point.
+    func newNote(_ kind: NoteKind, for trip: Trip, location: CLLocation?) -> TripNote {
+        var n = TripNote()
+        n.kind = kind
+        if kind != .generic { n.currency = NoteDefaults.currency }
+        if kind == .fuel { n.fuelType = NoteDefaults.fuelType }
+        guard trip.isRecording else { return n }        // added afterwards: no position
+        if let l = location, l.horizontalAccuracy >= 0, Date().timeIntervalSince(l.timestamp) < 60 {
+            n.lat = l.coordinate.latitude
+            n.lon = l.coordinate.longitude
+            if l.verticalAccuracy >= 0 { n.alt = l.altitude }
+        } else if let p = activePoints.last {
+            n.lat = p.lat
+            n.lon = p.lon
+            if p.vAcc >= 0 { n.alt = Double(p.alt) }
+        }
+        return n
+    }
+
     func delete(_ trip: Trip) {
         if trip.isRecording {
             pending.removeAll()
@@ -252,7 +291,7 @@ final class TripStore: ObservableObject {
 
     // MARK: - Export
 
-    enum ExportKind { case gpx, csv, summary }
+    enum ExportKind { case gpx, csv, summary, notes }
 
     /// Writes export files for one trip to a temporary folder and returns their URLs.
     func exportFiles(_ trip: Trip, kinds: [ExportKind]) async -> [URL] {
@@ -263,12 +302,13 @@ final class TripStore: ObservableObject {
             case .gpx:     files.append(writeExport("\(trip.fileName).gpx", TripExport.gpx([(trip, pts)])))
             case .csv:     files.append(writeExport("\(trip.fileName).csv", TripExport.pointsCSV(pts)))
             case .summary: files.append(writeExport("\(trip.fileName).txt", TripExport.summary(trip)))
+            case .notes:   files.append(writeExport("\(trip.fileName) notes.csv", TripExport.notesCSV([trip])))
             }
         }
         return files.compactMap { $0 }
     }
 
-    /// Logbook CSV (one row per flight) plus one GPX with every track.
+    /// Logbook CSV (one row per trip), one GPX with every track and note, and a notes CSV if there are notes.
     func exportAll() async -> [URL] {
         var all: [(Trip, [TripPoint])] = []
         for t in trips.sorted(by: { $0.date < $1.date }) {
@@ -278,6 +318,8 @@ final class TripStore: ObservableObject {
         return [
             writeExport("AeroGPS logbook \(stamp).csv", TripExport.logbookCSV(trips)),
             writeExport("AeroGPS all tracks \(stamp).gpx", TripExport.gpx(all)),
+            trips.contains { !$0.tripNotes.isEmpty }
+                ? writeExport("AeroGPS notes \(stamp).csv", TripExport.notesCSV(trips)) : nil,
         ].compactMap { $0 }
     }
 

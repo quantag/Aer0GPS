@@ -15,6 +15,7 @@ struct TripsScreen: View {
     @State private var exporting = false
     /// nil = all types
     @State private var filter: TripKind?
+    @State private var noteSheet: NoteSheet?
 
     private var finished: [Trip] {
         store.trips.filter { !$0.isRecording && (filter == nil || $0.kind == filter) }
@@ -64,6 +65,9 @@ struct TripsScreen: View {
             .sheet(item: $share) { item in
                 ShareSheet(items: item.urls)
             }
+            .sheet(item: $noteSheet) { sheet in
+                NoteEditView(sheet: sheet).environmentObject(store)
+            }
             .confirmationDialog("Stop recording this trip?", isPresented: $confirmStop, titleVisibility: .visible) {
                 Button("Stop recording", role: .destructive) { store.stopRecording() }
             }
@@ -103,6 +107,26 @@ struct TripsScreen: View {
                 NavigationLink(value: t.id) {
                     RecordingCard(trip: t, location: sensors.location)
                 }
+                // One tap per note type: quick to use on the road.
+                HStack(spacing: 8) {
+                    ForEach(NoteKind.allCases) { k in
+                        Button {
+                            noteSheet = NoteSheet(tripID: t.id, note: store.newNote(k, for: t, location: sensors.location),
+                                                  isNew: true)
+                        } label: {
+                            VStack(spacing: 3) {
+                                Image(systemName: k.icon).font(.title3)
+                                Text(k == .generic ? "Note" : k.name).font(.caption)
+                            }
+                            .foregroundColor(k.color)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .background(k.color.opacity(0.12))
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                        }
+                    }
+                }
+                .buttonStyle(.borderless)
                 HStack {
                     Button {
                         editing = t
@@ -331,7 +355,9 @@ struct RecordingCard: View {
                     value("max", Fmt.altitudeShort(s.maxAltitude, k))
                     value("dist", s.distance > 0 ? "\(Fmt.group(s.distance / 1000)) km" : "—")
                 }
-                Text("\(s.pointCount) fixes saved").font(.caption2).foregroundColor(.secondary)
+                Text("\(s.pointCount) fixes saved"
+                     + (trip.tripNotes.isEmpty ? "" : " · \(trip.tripNotes.count) note\(trip.tripNotes.count == 1 ? "" : "s")"))
+                    .font(.caption2).foregroundColor(.secondary)
             }
             .padding(.vertical, 4)
         }
@@ -390,8 +416,8 @@ struct TripEditView: View {
                     .pickerStyle(.segmented)
                 }
                 if trip.isFlight { flightFields } else { driveFields }
-                Section("Notes") {
-                    TextField("Notes", text: $trip.notes, axis: .vertical)
+                Section("Comment") {
+                    TextField("About the whole trip (optional)", text: $trip.notes, axis: .vertical)
                         .lineLimit(3...8)
                 }
             }

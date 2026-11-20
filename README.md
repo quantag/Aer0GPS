@@ -164,6 +164,18 @@ details (all statistics are kept; only how they are shown changes).
   ascent / descent. Speeds in km/h, altitudes in m. The map marks the start and end
   of the track.
 - The list can be filtered by type (All / Airplane / Car); totals follow the filter.
+- **Notes**: while recording, the Note / Fueling / Food buttons add a note with the
+  current time and GPS position (the latest fix, or the last recorded point if the
+  fix is older than a minute). Notes can also be added to a finished trip (no
+  position) and edited or deleted at any time from the trip screen.
+  - *Generic*: any text.
+  - *Fueling*: fuel type, amount (litres, or kWh for Electric), total price and
+    currency; price per litre is calculated.
+  - *Food*: what you ate, price and currency.
+  Notes appear on the trip map (⛽ 🍴 📝), and the trip screen totals fuel and food
+  costs (per currency). The last used currency and fuel type are remembered.
+  Exports: GPX waypoints, a notes CSV (per trip and in the full export), and the
+  text summary. The trip's own free text is now called "Comment".
 - **Airports are detected automatically**: the departure is the airport nearest
   (within 10 km) to the start of the takeoff roll, the arrival the one nearest to
   the end of the landing roll. A code you typed is never replaced, except with

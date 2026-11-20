@@ -21,6 +21,8 @@
 		A1B2C3D4E5F6000000000034 /* TripDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6000000000024 /* TripDetailView.swift */; };
 		A1B2C3D4E5F6000000000035 /* TripMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6000000000025 /* TripMapView.swift */; };
 		A1B2C3D4E5F6000000000036 /* airports.tsv in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6000000000026 /* airports.tsv */; };
+		A1B2C3D4E5F6000000000037 /* TripNote.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6000000000027 /* TripNote.swift */; };
+		A1B2C3D4E5F6000000000038 /* NoteViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6000000000028 /* NoteViews.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -40,6 +42,8 @@
 		A1B2C3D4E5F6000000000024 /* TripDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripDetailView.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F6000000000025 /* TripMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripMapView.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F6000000000026 /* airports.tsv */ = {isa = PBXFileReference; lastKnownFileType = text; path = airports.tsv; sourceTree = "<group>"; };
+		A1B2C3D4E5F6000000000027 /* TripNote.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripNote.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6000000000028 /* NoteViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteViews.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -76,6 +80,8 @@
 				A1B2C3D4E5F6000000000024 /* TripDetailView.swift */,
 				A1B2C3D4E5F6000000000025 /* TripMapView.swift */,
 				A1B2C3D4E5F6000000000026 /* airports.tsv */,
+				A1B2C3D4E5F6000000000027 /* TripNote.swift */,
+				A1B2C3D4E5F6000000000028 /* NoteViews.swift */,
 				A1B2C3D4E5F600000000001A /* worldmap.bin */,
 				A1B2C3D4E5F600000000001E /* Info.plist */,
 				A1B2C3D4E5F600000000000A /* Assets.xcassets */,
@@ -167,6 +173,8 @@
 				A1B2C3D4E5F600000000000D /* ContentView.swift in Sources */,
 				A1B2C3D4E5F600000000001B /* MapScreen.swift in Sources */,
 				A1B2C3D4E5F600000000001C /* WorldMap.swift in Sources */,
+				A1B2C3D4E5F6000000000038 /* NoteViews.swift in Sources */,
+				A1B2C3D4E5F6000000000037 /* TripNote.swift in Sources */,
 				A1B2C3D4E5F6000000000035 /* TripMapView.swift in Sources */,
 				A1B2C3D4E5F6000000000034 /* TripDetailView.swift in Sources */,
 				A1B2C3D4E5F6000000000033 /* TripsScreen.swift in Sources */,

@@ -223,7 +223,10 @@ struct Trip: Codable, Identifiable, Hashable {
     var aircraft = ""
     var seat = ""
     var vehicle = ""            // Car: model, plate, …
+    /// Free-text comment about the whole trip (shown as "Comment").
     var notes = ""
+    /// Notes added during (or after) the trip: text, fuel stops, meals — each with time and position.
+    var tripNotes: [TripNote] = []
     /// from / to were filled automatically from the track (so a better detection may replace them).
     var autoFrom = false
     var autoTo = false
@@ -328,6 +331,7 @@ extension Trip {
         seat = try c.decodeIfPresent(String.self, forKey: .seat) ?? ""
         vehicle = try c.decodeIfPresent(String.self, forKey: .vehicle) ?? ""
         notes = try c.decodeIfPresent(String.self, forKey: .notes) ?? ""
+        tripNotes = (try? c.decodeIfPresent([TripNote].self, forKey: .tripNotes)) ?? []
         autoFrom = try c.decodeIfPresent(Bool.self, forKey: .autoFrom) ?? false
         autoTo = try c.decodeIfPresent(Bool.self, forKey: .autoTo) ?? false
         isRecording = try c.decodeIfPresent(Bool.self, forKey: .isRecording) ?? false
@@ -437,6 +441,8 @@ enum TripExport {
         <gpx version="1.1" creator="AeroGPS" xmlns="http://www.topografix.com/GPX/1/1">
 
         """
+        // GPX requires all waypoints (the trips' notes) before the tracks.
+        for (trip, _) in trips { out += gpxWaypoints(trip) }
         for (trip, pts) in trips {
             out += "  <trk>\n    <name>\(xml(trip.title))</name>\n"
             let desc = [trip.airline, trip.aircraft, trip.notes].filter { !$0.isEmpty }.joined(separator: " · ")
@@ -475,7 +481,7 @@ enum TripExport {
         let cols = ["date", "type", "flight", "airline", "aircraft", "seat", "vehicle", "from", "from_name", "to", "to_name",
                     "first_fix_utc", "takeoff_utc", "landing_utc", "last_fix_utc", "air_time_min", "moving_min",
                     "recorded_min", "track_km", "route_km", "max_speed_kt", "max_speed_kmh", "max_alt_ft", "max_alt_m",
-                    "max_climb_fpm", "max_descent_fpm", "ascent_m", "descent_m", "points", "notes"]
+                    "max_climb_fpm", "max_descent_fpm", "ascent_m", "descent_m", "points", "note_count", "comment"]
         var out = cols.joined(separator: ",") + "\n"
         func t(_ d: Date?) -> String { d.map { Fmt.iso.string(from: $0) } ?? "" }
         func n(_ v: Double?, _ dec: Int = 0) -> String { v.map { String(format: "%.\(dec)f", $0) } ?? "" }
@@ -493,7 +499,7 @@ enum TripExport {
                 n(s.maxSpeed * 1.943844), n(s.maxSpeed * 3.6),
                 n(s.maxAltitude.map { $0 * 3.28084 }), n(s.maxAltitude),
                 n(s.maxClimb * 196.85), n(s.maxDescent * 196.85), n(s.ascent), n(s.descent),
-                "\(s.pointCount)", trip.notes,
+                "\(s.pointCount)", "\(trip.tripNotes.count)", trip.notes,
             ]
             out += row.map(csvField).joined(separator: ",") + "\n"
         }
@@ -524,7 +530,8 @@ enum TripExport {
             add("Ascent", s.ascent.map { "\(Fmt.group($0)) m" } ?? "—")
             add("Descent", s.descent.map { "\(Fmt.group($0)) m" } ?? "—")
             add("Fixes", "\(s.pointCount), longest gap \(Fmt.duration(s.longestGap))")
-            if !trip.notes.isEmpty { add("Notes", trip.notes) }
+            if !trip.notes.isEmpty { add("Comment", trip.notes) }
+            lines += noteLines(trip)
             return lines.joined(separator: "\n") + "\n"
         }
         if let a = trip.fromAirport { lines.append("From:       \(a.iata) \(a.title)") }
@@ -544,18 +551,40 @@ enum TripExport {
         lines.append("Max climb:  \(Fmt.vspeed(s.maxClimb))")
         lines.append("Max desc.:  \(Fmt.vspeed(s.maxDescent))")
         lines.append("Fixes:      \(s.pointCount), longest gap \(Fmt.duration(s.longestGap))")
-        if !trip.notes.isEmpty { lines.append("Notes:      \(trip.notes)") }
+        if !trip.notes.isEmpty { lines.append("Comment:    \(trip.notes)") }
+        lines += noteLines(trip)
         return lines.joined(separator: "\n") + "\n"
     }
 
-    private static func xml(_ s: String) -> String {
+    /// Notes and costs for the text summary.
+    private static func noteLines(_ trip: Trip) -> [String] {
+        guard !trip.tripNotes.isEmpty else { return [] }
+        var lines = ["", "Notes:"]
+        for n in trip.tripNotes {
+            let pos = n.lat.flatMap { la in n.lon.map { String(format: "  (%.5f, %.5f)", la, $0) } } ?? ""
+            lines.append("  \(Fmt.time.string(from: n.date))  \(n.kind.name): \(n.headline)\(pos)")
+            if let d = n.detail { lines.append("         \(d)") }
+        }
+        let c = NoteCosts(trip.tripNotes)
+        if !c.isEmpty {
+            lines.append("")
+            if !c.fuel.isEmpty || !c.fuelAmount.isEmpty {
+                lines.append("Fuel:       \(NoteCosts.text(c.fuel)), \(c.fuelAmountText)")
+            }
+            if !c.food.isEmpty { lines.append("Food:       \(NoteCosts.text(c.food))") }
+            lines.append("Total cost: \(NoteCosts.text(c.total))")
+        }
+        return lines
+    }
+
+    static func xml(_ s: String) -> String {
         s.replacingOccurrences(of: "&", with: "&amp;")
             .replacingOccurrences(of: "<", with: "&lt;")
             .replacingOccurrences(of: ">", with: "&gt;")
             .replacingOccurrences(of: "\"", with: "&quot;")
     }
 
-    private static func csvField(_ s: String) -> String {
+    static func csvField(_ s: String) -> String {
         guard s.contains(where: { $0 == "," || $0 == "\"" || $0 == "\n" }) else { return s }
         return "\"" + s.replacingOccurrences(of: "\"", with: "\"\"") + "\""
     }

@@ -11,6 +11,8 @@ struct TripMapView: View {
     /// Current position while recording.
     var live: CLLocation?
     var showsCities = true
+    /// Notes with a position are drawn as markers (⛽ 🍴 📝).
+    var notes: [TripNote] = []
 
     @State private var center: SIMD2<Double>?
     @State private var zoom: Double?
@@ -36,6 +38,9 @@ struct TripMapView: View {
                     if to == nil, live == nil, track.count > 1, let p = track.last { r.drawMarker(p, color: .red, label: nil) }
                     if let from { r.drawMarker(Mercator.project(from.coordinate), color: .green, label: from.iata) }
                     if let to { r.drawMarker(Mercator.project(to.coordinate), color: .red, label: to.iata) }
+                    for n in notes {
+                        if let p = n.mercator { r.drawMarker(p, color: n.kind.color, label: n.kind.emoji) }
+                    }
                     if let live { r.drawPosition(live, heading: nil) }
                     r.drawScaleBar()
                 }

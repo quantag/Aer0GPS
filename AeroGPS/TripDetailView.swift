@@ -18,6 +18,7 @@ struct TripDetailView: View {
     @State private var profile = Profile.altitude
     @State private var confirmDelete = false
     @State private var confirmRedetect = false
+    @State private var noteSheet: NoteSheet?
 
     enum Profile: String, CaseIterable { case altitude = "Altitude", speed = "Speed" }
 
@@ -38,7 +39,8 @@ struct TripDetailView: View {
 
         return List {
             Section {
-                TripMapView(track: track, from: trip.fromAirport, to: trip.toAirport, live: live, showsCities: false)
+                TripMapView(track: track, from: trip.fromAirport, to: trip.toAirport, live: live, showsCities: false,
+                            notes: trip.tripNotes)
                     .frame(height: 300)
                     .overlay(alignment: .topTrailing) {
                         Button { fullMap = true } label: {
@@ -57,6 +59,7 @@ struct TripDetailView: View {
 
             routeSection(trip)
             statsSection(trip)
+            notesSection(trip)
             profileSection(trip, pts)
             detailsSection(trip)
 
@@ -84,7 +87,12 @@ struct TripDetailView: View {
                     Button("GPX track") { export(trip, [.gpx]) }
                     Button("CSV — every fix") { export(trip, [.csv]) }
                     Button("Summary (text)") { export(trip, [.summary]) }
-                    Button("All three") { export(trip, [.gpx, .csv, .summary]) }
+                    if !trip.tripNotes.isEmpty {
+                        Button("Notes (CSV)") { export(trip, [.notes]) }
+                    }
+                    Button("All") {
+                        export(trip, trip.tripNotes.isEmpty ? [.gpx, .csv, .summary] : [.gpx, .csv, .summary, .notes])
+                    }
                 } label: {
                     Image(systemName: "square.and.arrow.up")
                 }
@@ -103,9 +111,13 @@ struct TripDetailView: View {
         .sheet(item: $share) { item in
             ShareSheet(items: item.urls)
         }
+        .sheet(item: $noteSheet) { sheet in
+            NoteEditView(sheet: sheet).environmentObject(store)
+        }
         .fullScreenCover(isPresented: $fullMap) {
             ZStack(alignment: .topLeading) {
-                TripMapView(track: track, from: trip.fromAirport, to: trip.toAirport, live: live)
+                TripMapView(track: track, from: trip.fromAirport, to: trip.toAirport, live: live,
+                            notes: trip.tripNotes)
                     .ignoresSafeArea()
                 Button { fullMap = false } label: {
                     Image(systemName: "xmark")
@@ -141,6 +153,47 @@ struct TripDetailView: View {
     }
 
     // MARK: - Sections
+
+    private func notesSection(_ trip: Trip) -> some View {
+        let costs = NoteCosts(trip.tripNotes)
+        return Section {
+            ForEach(trip.tripNotes) { n in
+                Button {
+                    noteSheet = NoteSheet(tripID: trip.id, note: n, isNew: false)
+                } label: {
+                    NoteRow(note: n)
+                }
+                .foregroundColor(.primary)
+                .swipeActions {
+                    Button {
+                        store.deleteNote(n.id, in: trip.id)
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                    .tint(.red)
+                }
+            }
+            AddNoteMenu { kind in
+                noteSheet = NoteSheet(tripID: trip.id, note: store.newNote(kind, for: trip, location: sensors.location),
+                                      isNew: true)
+            } label: {
+                Label("Add note", systemImage: "plus.circle")
+            }
+            if !costs.isEmpty {
+                if !costs.fuel.isEmpty || !costs.fuelAmount.isEmpty {
+                    row("Fuel", "\(NoteCosts.text(costs.fuel)) · \(costs.fuelAmountText)")
+                }
+                if !costs.food.isEmpty { row("Food", NoteCosts.text(costs.food)) }
+                row("Total cost", NoteCosts.text(costs.total))
+            }
+        } header: {
+            Text("Notes")
+        } footer: {
+            if trip.isRecording {
+                Text("Notes added now get the current GPS position.")
+            }
+        }
+    }
 
     @ViewBuilder
     private func routeSection(_ trip: Trip) -> some View {
@@ -266,7 +319,7 @@ struct TripDetailView: View {
     private func detailsSection(_ trip: Trip) -> some View {
         if !trip.isFlight {
             if !trip.notes.isEmpty {
-                Section("Notes") { Text(trip.notes).font(.subheadline) }
+                Section("Comment") { Text(trip.notes).font(.subheadline) }
             }
         } else {
             flightDetails(trip)
@@ -280,7 +333,7 @@ struct TripDetailView: View {
             row("Aircraft", trip.aircraft.isEmpty ? "—" : trip.aircraft)
             row("Seat", trip.seat.isEmpty ? "—" : trip.seat)
             if !trip.notes.isEmpty {
-                Text(trip.notes).font(.subheadline)
+                Text(trip.notes).font(.subheadline)       // comment
             }
         }
     }
