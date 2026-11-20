@@ -57,16 +57,18 @@ struct TripDetailView: View {
 
             routeSection(trip)
             statsSection(trip)
-            profileSection(pts)
+            profileSection(trip, pts)
             detailsSection(trip)
 
             Section {
-                Button {
-                    confirmRedetect = true
-                } label: {
-                    Label("Detect airports from track", systemImage: "location.magnifyingglass")
+                if trip.isFlight {
+                    Button {
+                        confirmRedetect = true
+                    } label: {
+                        Label("Detect airports from track", systemImage: "location.magnifyingglass")
+                    }
+                    .disabled(trip.stats.pointCount == 0)
                 }
-                .disabled(trip.stats.pointCount == 0)
                 Button(role: .destructive) {
                     confirmDelete = true
                 } label: {
@@ -140,16 +142,46 @@ struct TripDetailView: View {
 
     // MARK: - Sections
 
+    @ViewBuilder
     private func routeSection(_ trip: Trip) -> some View {
         let s = trip.stats
-        return Section {
+        let header = Text(s.firstFix.map { Fmt.dateTime.string(from: $0) } ?? Fmt.dateTime.string(from: trip.created))
+        if trip.isFlight {
+            Section {
+                flightRoute(trip, s)
+            } header: {
+                header
+            }
+        } else {
+            Section {
+                placeRow("From", trip.from, time: s.firstFix)
+                placeRow("To", trip.to, time: trip.isRecording ? nil : s.lastFix)
+                if !trip.vehicle.isEmpty {
+                    Label(trip.vehicle, systemImage: "car.fill").font(.subheadline)
+                }
+            } header: {
+                header
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func flightRoute(_ trip: Trip, _ s: TripStats) -> some View {
             airportRow("From", trip.from, trip.fromAirport, auto: trip.autoFrom,
                        time: s.takeoff.map { "Takeoff \(Fmt.localTime($0, trip.fromAirport))" })
             airportRow("To", trip.to, trip.toAirport, auto: trip.autoTo,
                        time: s.landing.map { "Landing \(Fmt.localTime($0, trip.toAirport))" })
-        } header: {
-            Text(trip.stats.firstFix.map { Fmt.dateTime.string(from: $0) } ?? Fmt.dateTime.string(from: trip.created))
+    }
+
+    /// Drive start / end: the place the user typed (optional) and the time.
+    private func placeRow(_ label: String, _ place: String, time: Date?) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(label).foregroundColor(.secondary).frame(width: 44, alignment: .leading)
+            Text(place.isEmpty ? "—" : place).font(.body.weight(.semibold))
+            Spacer()
+            if let time { Text(time, style: .time).font(.subheadline).foregroundColor(.secondary) }
         }
+        .padding(.vertical, 2)
     }
 
     private func airportRow(_ label: String, _ code: String, _ airport: Airport?, auto: Bool, time: String?) -> some View {
@@ -172,7 +204,30 @@ struct TripDetailView: View {
         .padding(.vertical, 2)
     }
 
+    @ViewBuilder
     private func statsSection(_ trip: Trip) -> some View {
+        if trip.isFlight { flightStats(trip) } else { driveStats(trip) }
+    }
+
+    private func driveStats(_ trip: Trip) -> some View {
+        let s = trip.stats
+        let moving = s.movingTime
+        return Section("Statistics") {
+            row("Driving time", Fmt.duration(moving))
+            row("Recorded", Fmt.duration(s.duration))
+            if let d = s.duration, let m = moving, d - m >= 60 { row("Stopped", Fmt.duration(d - m)) }
+            row("Distance", Fmt.distance(s.distance))
+            row("Max speed", Fmt.speed(s.maxSpeed, .car))
+            if let m = moving, m > 60, s.distance > 0 { row("Avg speed (moving)", Fmt.speed(s.distance / m, .car)) }
+            row("Max altitude", Fmt.altitude(s.maxAltitude, .car))
+            row("Min altitude", Fmt.altitude(s.minAltitude, .car))
+            row("Ascent / descent", s.ascent.map { a in "↑ \(Fmt.group(a)) m   ↓ \(Fmt.group(s.descent ?? 0)) m" } ?? "—")
+            row("GPS fixes", "\(s.pointCount)")
+            row("Longest GPS gap", s.pointCount > 1 ? Fmt.duration(s.longestGap) : "—")
+        }
+    }
+
+    private func flightStats(_ trip: Trip) -> some View {
         let s = trip.stats
         var air = Fmt.duration(s.airTime)
         if s.airTime != nil && (s.startedAirborne || s.endedAirborne) { air += "  (partial)" }
@@ -194,20 +249,31 @@ struct TripDetailView: View {
     }
 
     @ViewBuilder
-    private func profileSection(_ pts: [TripPoint]) -> some View {
+    private func profileSection(_ trip: Trip, _ pts: [TripPoint]) -> some View {
         if pts.count > 2 {
             Section {
                 Picker("Profile", selection: $profile) {
                     ForEach(Profile.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                 }
                 .pickerStyle(.segmented)
-                ProfileChart(points: pts, profile: profile)
+                ProfileChart(points: pts, profile: profile, kind: trip.kind)
                     .frame(height: 170)
             }
         }
     }
 
+    @ViewBuilder
     private func detailsSection(_ trip: Trip) -> some View {
+        if !trip.isFlight {
+            if !trip.notes.isEmpty {
+                Section("Notes") { Text(trip.notes).font(.subheadline) }
+            }
+        } else {
+            flightDetails(trip)
+        }
+    }
+
+    private func flightDetails(_ trip: Trip) -> some View {
         Section("Details") {
             row("Flight", trip.flightNumber.isEmpty ? "—" : trip.flightNumber)
             row("Airline", trip.airline.isEmpty ? "—" : trip.airline)
@@ -229,10 +295,11 @@ struct TripDetailView: View {
     }
 }
 
-/// Altitude (ft) or ground speed (kt) over time, downsampled to ~400 points.
+/// Altitude or speed over time (ft / kt for flights, m / km/h for drives), downsampled to ~400 points.
 struct ProfileChart: View {
     let points: [TripPoint]
     let profile: TripDetailView.Profile
+    var kind: TripKind = .airplane
 
     private struct Sample: Identifiable {
         let id: Int
@@ -241,7 +308,7 @@ struct ProfileChart: View {
     }
 
     var body: some View {
-        let samples = Self.samples(points, profile)
+        let samples = Self.samples(points, profile, kind)
         if samples.count < 2 {
             Text("Not enough valid data").font(.caption).foregroundColor(.secondary)
         } else {
@@ -252,7 +319,8 @@ struct ProfileChart: View {
                 LineMark(x: .value("Time", s.date), y: .value(profile.rawValue, s.value))
                     .foregroundStyle(Color.blue)
             }
-            .chartYAxisLabel(profile == .altitude ? "ft" : "kt")
+            .chartYAxisLabel(profile == .altitude ? (kind == .airplane ? "ft" : "m")
+                                                  : (kind == .airplane ? "kt" : "km/h"))
             .chartXAxis {
                 AxisMarks(values: .automatic(desiredCount: 5)) { _ in
                     AxisGridLine()
@@ -262,7 +330,8 @@ struct ProfileChart: View {
         }
     }
 
-    private static func samples(_ pts: [TripPoint], _ profile: TripDetailView.Profile) -> [Sample] {
+    private static func samples(_ pts: [TripPoint], _ profile: TripDetailView.Profile,
+                                _ kind: TripKind) -> [Sample] {
         let valid: [TripPoint]
         switch profile {
         case .altitude: valid = pts.filter(\.hasGoodAltitude)
@@ -271,7 +340,13 @@ struct ProfileChart: View {
         let step = max(1, valid.count / 400)
         return stride(from: 0, to: valid.count, by: step).map { i in
             let p = valid[i]
-            let v = profile == .altitude ? Double(p.alt) * 3.28084 : Double(p.spd) * 1.943844
+            let v: Double
+            switch (profile, kind) {
+            case (.altitude, .airplane): v = Double(p.alt) * 3.28084
+            case (.altitude, .car):      v = Double(p.alt)
+            case (.speed, .airplane):    v = Double(p.spd) * 1.943844
+            case (.speed, .car):         v = Double(p.spd) * 3.6
+            }
             return Sample(id: i, date: p.date, value: v)
         }
     }

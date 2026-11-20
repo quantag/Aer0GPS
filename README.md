@@ -7,8 +7,8 @@ iOS app with three tabs:
   `$GPGGA` / `$GPRMC` lines.
 - **Map**: a fully offline world map (no network, no tiles) with your position,
   accuracy circle, direction arrow and flown track.
-- **Trips**: record flights, keep every trip, see statistics, view each route on the
-  map and export a flight logbook.
+- **Trips**: record flights and drives, keep every trip, see statistics, view each
+  route on the map and export a travel logbook.
 
 ## What "low level" means on iOS
 
@@ -151,9 +151,19 @@ layers land/land-coarse/lakes/lakes-coarse/borders/borders-coarse as
 
 ## Trips tab
 
-- **Start recording now** starts a trip immediately; details can be added later.
-  **New trip with flight details…** lets you enter From / To (IATA or ICAO code, or
-  search by city), flight number, airline, aircraft, seat and notes first.
+Two trip types: **Airplane** and **Car**. The type can be changed later in the trip's
+details (all statistics are kept; only how they are shown changes).
+
+- **Start flight** / **Start drive** start recording immediately; details can be
+  added later. **New trip with details…** lets you pick the type and enter details first.
+- **Airplane**: From / To are airports (IATA or ICAO code, or search by city), plus
+  flight number, airline, aircraft, seat and notes. Speeds in kt, altitudes in ft.
+- **Car**: the route is optional free text (drive wherever you like), plus vehicle
+  and notes. No airport detection. Statistics: driving time (moving faster than
+  5 km/h), stopped time, distance, max and average speed, max / min altitude, total
+  ascent / descent. Speeds in km/h, altitudes in m. The map marks the start and end
+  of the track.
+- The list can be filtered by type (All / Airplane / Car); totals follow the filter.
 - **Airports are detected automatically**: the departure is the airport nearest
   (within 10 km) to the start of the takeoff roll, the arrival the one nearest to
   the end of the landing roll. A code you typed is never replaced, except with
@@ -169,8 +179,11 @@ layers land/land-coarse/lakes/lakes-coarse/borders/borders-coarse as
   great-circle route dashed, departure green, arrival red), plus an altitude /
   speed profile. The map has a full-screen mode.
 - Export: one trip as GPX, CSV (every fix) or a text summary; the share button in
-  the list exports the whole logbook as CSV (one row per flight) plus one GPX
-  with all tracks.
+  the list exports the whole logbook as CSV (one row per trip, with a `type`
+  column; flight-only columns are empty for drives) plus one GPX with all tracks.
+- Trips saved before trip types existed load as Airplane trips. Statistics are
+  versioned: trips with statistics from an older version are recomputed from
+  their saved track in the background on launch.
 - Recording keeps at most one point per second (about 3 MB for a 10-hour flight),
   skips stale fixes, and writes to disk every 10 s. If the app is killed while
   recording, the trip continues recording after the next launch.

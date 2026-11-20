@@ -2,7 +2,7 @@ import SwiftUI
 import CoreLocation
 
 /// Offline map of one trip: recorded track (yellow), great-circle route between the airports (dashed),
-/// departure (green) and arrival (red) markers. Starts zoomed to fit the trip; drag / pinch to explore.
+/// departure / start (green) and arrival / end (red) markers. Starts zoomed to fit the trip; drag / pinch to explore.
 struct TripMapView: View {
     /// Track in mercator unit space.
     let track: [SIMD2<Double>]
@@ -31,6 +31,9 @@ struct TripMapView: View {
                     r.drawBase(world, showCities: showsCities)
                     if let from, let to, from != to { r.drawGreatCircle(from, to) }
                     r.drawTrack(track)
+                    // No airport known (drives, or flights not detected yet): mark the track's ends.
+                    if from == nil, let p = track.first { r.drawMarker(p, color: .green, label: nil) }
+                    if to == nil, live == nil, track.count > 1, let p = track.last { r.drawMarker(p, color: .red, label: nil) }
                     if let from { r.drawMarker(Mercator.project(from.coordinate), color: .green, label: from.iata) }
                     if let to { r.drawMarker(Mercator.project(to.coordinate), color: .red, label: to.iata) }
                     if let live { r.drawPosition(live, heading: nil) }
@@ -101,6 +104,6 @@ struct TripMapView: View {
         let spanX = max(maxX - minX, 1e-6), spanY = max(maxY - minY, 1e-6)
         let usableW = max(Double(size.width) - 60, 50), usableH = max(Double(size.height) - 80, 50)
         let z = log2(min(usableW / (spanX * 256), usableH / (spanY * 256)))
-        return (center, min(max(z, 1), 11))
+        return (center, min(max(z, 1), 13))
     }
 }

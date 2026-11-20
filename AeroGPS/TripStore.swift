@@ -81,6 +81,23 @@ final class TripStore: ObservableObject {
         if let i = recording.first {
             activePoints = readPoints(trips[i].id)
         }
+
+        // Trips whose cached statistics predate the current calculation (e.g. no driving stats yet).
+        let stale = trips.filter {
+            !$0.isRecording && $0.stats.pointCount > 0 && $0.stats.version != TripStats.currentVersion
+        }
+        if !stale.isEmpty {
+            Task { for t in stale { await recomputeStats(t) } }
+        }
+    }
+
+    /// Recomputes a trip's statistics from its saved points (off the main thread).
+    private func recomputeStats(_ trip: Trip) async {
+        let pts = await points(for: trip)
+        let stats = await Task.detached(priority: .utility) { TripStats.compute(pts) }.value
+        guard let i = trips.firstIndex(where: { $0.id == trip.id }), !trips[i].isRecording else { return }
+        trips[i].stats = stats
+        save(trips[i])
     }
 
     private func save(_ trip: Trip) {
@@ -185,16 +202,28 @@ final class TripStore: ObservableObject {
     /// Saves the user-editable fields (statistics stay as recorded).
     func updateDetails(_ edited: Trip) {
         guard let i = trips.firstIndex(where: { $0.id == edited.id }) else { return }
-        var t = trips[i]
-        if t.from != edited.from { t.autoFrom = false }
-        if t.to != edited.to { t.autoTo = false }
+        let old = trips[i]
+        var t = old
+        t.kind = edited.kind
         t.from = edited.from
         t.to = edited.to
+        if old.kind != edited.kind {
+            // Airports detected for a flight make no sense for a drive (and vice versa).
+            if old.autoFrom && edited.from == old.from { t.from = "" }
+            if old.autoTo && edited.to == old.to { t.to = "" }
+            t.autoFrom = false
+            t.autoTo = false
+        } else {
+            if edited.from != old.from { t.autoFrom = false }
+            if edited.to != old.to { t.autoTo = false }
+        }
         t.flightNumber = edited.flightNumber
         t.airline = edited.airline
         t.aircraft = edited.aircraft
         t.seat = edited.seat
+        t.vehicle = edited.vehicle
         t.notes = edited.notes
+        t.autoDetectAirports()          // e.g. switched to Airplane: fill empty codes from the track
         trips[i] = t
         save(t)
     }
@@ -268,8 +297,8 @@ final class TripStore: ObservableObject {
     // MARK: - Totals
 
     struct Totals {
-        var flights = 0
-        var airTime: TimeInterval = 0
+        var count = 0
+        var travelTime: TimeInterval = 0     // air time for flights, moving time for drives
         var distance: Double = 0
         var maxAltitude: Double?
         var maxSpeed: Double = 0
@@ -278,17 +307,18 @@ final class TripStore: ObservableObject {
         var countries = 0
     }
 
-    var totals: Totals {
+    /// Totals over all trips of one type, or of every trip when `kind` is nil.
+    func totals(_ kind: TripKind?) -> Totals {
         var t = Totals()
         var airports = Set<String>(), countries = Set<String>()
-        for trip in trips {
+        for trip in trips where kind == nil || trip.kind == kind {
             let s = trip.stats
-            t.flights += 1
-            t.airTime += s.airTime ?? 0
+            t.count += 1
+            t.travelTime += trip.travelTime ?? 0
             t.distance += s.distance
             if let a = s.maxAltitude { t.maxAltitude = max(t.maxAltitude ?? a, a) }
             t.maxSpeed = max(t.maxSpeed, s.maxSpeed)
-            if (s.airTime ?? 0) > (t.longest?.stats.airTime ?? 0) { t.longest = trip }
+            if (trip.travelTime ?? 0) > (t.longest?.travelTime ?? 0) { t.longest = trip }
             for a in [trip.fromAirport, trip.toAirport].compactMap({ $0 }) {
                 airports.insert(a.iata)
                 countries.insert(a.country)
